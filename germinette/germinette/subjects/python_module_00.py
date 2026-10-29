@@ -1,0 +1,533 @@
+from germinette.core import BaseTester
+from germinette.utils import IOTester
+from rich.console import Console
+from rich.panel import Panel
+import importlib.util
+import inspect
+import sys
+import os
+import ast
+import traceback
+
+console = Console()
+
+class Tester(BaseTester):
+    def __init__(self):
+        super().__init__()
+        self.title = "[bold blue]Testing Module 00: Growing Code (v3.0)[/bold blue]"
+        self.exercises = [
+            ("ft_hello_garden", self.test_hello_garden),
+            ("ft_garden_name", self.test_garden_name),
+            ("ft_plot_area", self.test_plot_area),
+            ("ft_harvest_total", self.test_harvest_total),
+            ("ft_plant_age", self.test_plant_age),
+            ("ft_water_reminder", self.test_water_reminder),
+            ("ft_count_harvest", self.test_count_harvest),
+            ("ft_seed_inventory", self.test_seed_inventory),
+        ]
+        self.authorized_imports = {
+            "ft_hello_garden": set(),
+            "ft_garden_name": set(),
+            "ft_plot_area": set(),
+            "ft_harvest_total": set(),
+            "ft_plant_age": set(),
+            "ft_water_reminder": set(),
+            "ft_count_harvest_iterative": set(),
+            "ft_count_harvest_recursive": set(),
+            "ft_seed_inventory": set(),
+        }
+
+    def _load_func(self, module_name, exercise_label="Unknown Exercise", func_name=None):
+        if not func_name:
+            func_name = module_name
+        
+        # Determine base directory: prefer "python_module_00" if it exists in CWD
+        cwd = os.getcwd()
+        if os.path.exists(os.path.join(cwd, "python_module_00")):
+            base_dir = os.path.join(cwd, "python_module_00")
+        else:
+            base_dir = cwd
+
+        # Validate directory existence if exercise number can be parsed
+        expected_dir = None
+        try:
+            # Extract number from "Exercise 7"
+            ex_num = int(exercise_label.split()[-1])
+            expected_dirs = [f"ex{ex_num}"]
+            
+            dir_found = False
+            for d in expected_dirs:
+                if os.path.exists(os.path.join(base_dir, d)):
+                    dir_found = True
+                    expected_dir = os.path.join(base_dir, d)
+                    break
+            
+            if not dir_found:
+                 console.print("[red]KO (Directory Missing)[/red]")
+                 msg = (f"[bold red]Directory not found[/bold red]\n\n"
+                        f"Expected directory: [cyan]{expected_dirs[0]}[/cyan]\n"
+                        f"Location: {base_dir}\n\n"
+                        f"[bold]Please ensure the exercise folder exists and follows strictly 'exXX' naming (e.g., ex7, not ex07).[/bold]")
+                 self.record_error(exercise_label, "Missing Directory", msg)
+                 return None
+
+        except ValueError:
+            pass # Could not parse exercise number
+
+        # Search for file
+        search_paths = [base_dir]
+        if expected_dir:
+            search_paths.append(expected_dir)
+        else:
+             # Fallback to scanning all if parsing failed
+             for i in range(10):
+                ex_path = os.path.join(base_dir, f"ex{i}")
+                if os.path.exists(ex_path):
+                     search_paths.append(ex_path)
+
+
+        target_file = f"{module_name}.py"
+        found_path = None
+        
+        for path in search_paths:
+            potential = os.path.join(path, target_file)
+            if os.path.exists(potential):
+                found_path = potential
+                break
+        
+        if not found_path:
+             console.print("[red]KO[/red]")
+             msg = (f"[bold red]File not found[/bold red]\n\n"
+                    f"Expected: [cyan]{target_file}[/cyan]\n"
+                    f"Directory: [cyan]{expected_dir if expected_dir else 'scanned directories'}[/cyan]\n\n"
+                    f"[bold]Please ensure the file exists and is named correctly.[/bold]")
+             self.record_error(exercise_label, "Missing File", msg)
+             return None
+
+        try:
+            if getattr(self, 'verbose', False):
+                console.print(f"[dim]Debug: Loading {found_path} as {module_name}[/dim]")
+            if not self._check_module_structure(found_path, module_name, exercise_label):
+                return None
+
+            spec = importlib.util.spec_from_file_location(module_name, found_path)
+            if spec is None:
+                console.print("[red]Spec is None![/red]")
+                raise ImportError(f"Could not create spec for {found_path}")
+            
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = mod
+            spec.loader.exec_module(mod)
+            
+            func = getattr(mod, func_name)
+            
+            
+            # Check Style
+            style_errors = self.check_flake8(found_path)
+            if style_errors:
+                 console.print("[red]KO[/red]")
+                 self.record_error(exercise_label, "Style Error", style_errors)
+                 return None
+
+            return func
+        except ImportError as e:
+            console.print("[red]KO[/red]")
+            self.record_error(exercise_label, "Import Error", str(e))
+            return None
+        except AttributeError:
+             console.print("[red]KO[/red]")
+             if getattr(self, 'verbose', False):
+                 debug_attrs = dir(mod) if 'mod' in locals() else "Module not loaded"
+                 console.print(f"[dim]Attributes in module: {debug_attrs}[/dim]")
+             self.record_error(exercise_label, "Function Missing", f"Could not find function '{func_name}' in {found_path}")
+             return None
+        except Exception as e:
+             console.print("[red]KO[/red]")
+             self.record_error(exercise_label, "Error Loading Module", str(e))
+             return None
+
+    def _check_module_structure(self, path, expected_function, exercise_label):
+        """Enforce Module 00 pedagogical constraints:
+        - no top-level executable code
+        - no __main__ block
+        - only expected function (plus optional helper for recursive ex6)
+        - no imports (none are required in subject)
+        """
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+        except Exception as e:
+            self.record_error(exercise_label, "AST Error", f"Unable to parse file: {e}")
+            return False
+
+        is_recursive_ex6 = expected_function == "ft_count_harvest_recursive"
+        allowed_func_names = {expected_function}
+        if is_recursive_ex6:
+            # Subject explicitly allows helper functions for recursion exercise.
+            allowed_func_names.add("_helper")
+            allowed_func_names.add("helper")
+
+        for node in tree.body:
+            if isinstance(node, ast.If):
+                # Forbid `if __name__ == "__main__":`
+                if (
+                    isinstance(node.test, ast.Compare)
+                    and isinstance(node.test.left, ast.Name)
+                    and node.test.left.id == "__name__"
+                ):
+                    self.record_error(
+                        exercise_label,
+                        "Structure Error",
+                        "Do not include a __main__ block; submit only functions.",
+                    )
+                    return False
+            elif isinstance(node, ast.Import):
+                imported = {alias.name.split(".")[0] for alias in node.names}
+                allowed = self.authorized_imports.get(expected_function, set())
+                if not imported.issubset(allowed):
+                    self.record_error(
+                        exercise_label,
+                        "Forbidden Import",
+                        f"Imports are not authorized for {expected_function}. Found: {sorted(imported)}",
+                    )
+                    return False
+            elif isinstance(node, ast.ImportFrom):
+                mod = (node.module or "").split(".")[0]
+                allowed = self.authorized_imports.get(expected_function, set())
+                if mod not in allowed:
+                    self.record_error(
+                        exercise_label,
+                        "Forbidden Import",
+                        f"Imports are not authorized for {expected_function}. Found from: {mod or '<relative>'}",
+                    )
+                    return False
+            elif isinstance(node, ast.FunctionDef):
+                if node.name not in allowed_func_names:
+                    if not (is_recursive_ex6 and node.name.startswith("_")):
+                        self.record_error(
+                            exercise_label,
+                            "Structure Error",
+                            f"Unexpected function '{node.name}'. File should contain only '{expected_function}'.",
+                        )
+                        return False
+            elif isinstance(node, ast.Expr):
+                # Allow module docstring only.
+                if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
+                    self.record_error(
+                        exercise_label,
+                        "Structure Error",
+                        "Top-level executable code is not allowed; submit function definitions only.",
+                    )
+                    return False
+            elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.For, ast.While, ast.With, ast.Try, ast.ClassDef)):
+                self.record_error(
+                    exercise_label,
+                    "Structure Error",
+                    "Top-level statements are not allowed; submit function definitions only.",
+                )
+                return False
+
+        if expected_function not in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}:
+            self.record_error(
+                exercise_label,
+                "Function Missing",
+                f"Could not find required function '{expected_function}'.",
+            )
+            return False
+        return True
+
+    def test_hello_garden(self):
+        console.print("\n[bold]Testing Exercise 0: ft_hello_garden[/bold]")
+        exercise_label = "Exercise 0"
+        func = self._load_func("ft_hello_garden", exercise_label)
+        if not func: return
+
+        try:
+            output = IOTester.run_function(func)
+            expected = "Hello, Garden Community!"
+            success, msg = IOTester.assert_output(output, expected)
+            if success:
+                console.print("[green]OK[/green]")
+            else:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, "Output Mismatch", msg)
+        except Exception as e:
+            console.print(f"[red]KO[/red]")
+            self.record_error(exercise_label, "Runtime Error", traceback.format_exc())
+
+    def test_garden_name(self):
+        console.print("\n[bold]Testing Exercise 1: ft_garden_name[/bold]")
+        exercise_label = "Exercise 1"
+        func = self._load_func("ft_garden_name", exercise_label)
+        if not func:
+            return
+
+        test_cases = [
+            ("Community Garden", "Garden: Community Garden\nStatus: Growing well!"),
+            ("My Plot", "Garden: My Plot\nStatus: Growing well!"),
+            ("Urban Farm", "Garden: Urban Farm\nStatus: Growing well!"),
+        ]
+
+        for garden_name, expected in test_cases:
+            try:
+                output = IOTester.run_function(func, inputs=[garden_name])
+                if f"Garden: {garden_name}" in output and "Status: Growing well!" in output:
+                    console.print(f"[green]OK ({garden_name})[/green]")
+                else:
+                    console.print(f"[red]KO ({garden_name})[/red]")
+                    self.record_error(
+                        exercise_label,
+                        f"Failed Case (Input: {garden_name})",
+                        f"Expected:\n{expected}\nGot:\n{output}",
+                    )
+            except Exception:
+                console.print(f"[red]KO[/red]")
+                self.record_error(
+                    exercise_label,
+                    f"Runtime Error (Input: {garden_name})",
+                    traceback.format_exc(),
+                )
+
+    def test_plot_area(self):
+        console.print("\n[bold]Testing Exercise 2: ft_plot_area[/bold]")
+        exercise_label = "Exercise 2"
+        func = self._load_func("ft_plot_area", exercise_label)
+        if not func: return
+
+        test_cases = [
+            (["5", "3"], "15"),
+            (["10", "10"], "100"),
+            (["0", "5"], "0"),
+            (["7", "2"], "14")
+        ]
+
+        for inputs, expected_part in test_cases:
+            try:
+                output = IOTester.run_function(func, inputs=inputs)
+                if expected_part in output:
+                    console.print(f"[green]OK ({inputs[0]}x{inputs[1]}={expected_part})[/green]")
+                else:
+                    console.print(f"[red]KO ({inputs[0]}x{inputs[1]}={expected_part})[/red]")
+                    self.record_error(exercise_label, f"Failed Test Case (Input: {inputs})", f"Expected result: {expected_part}\nGot:\n{output}")
+            except Exception as e:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, f"Runtime Error (Input: {inputs})", traceback.format_exc())
+
+    def test_harvest_total(self):
+        console.print("\n[bold]Testing Exercise 3: ft_harvest_total[/bold]")
+        exercise_label = "Exercise 3"
+        func = self._load_func("ft_harvest_total", exercise_label)
+        if not func: return
+
+        test_cases = [
+            (["5", "8", "3"], "16"),
+            (["0", "0", "0"], "0"),
+            (["10", "20", "30"], "60"),
+            (["1", "2", "3"], "6")
+        ]
+
+        for inputs, expected_sum in test_cases:
+            try:
+                output = IOTester.run_function(func, inputs=inputs)
+                if f"Total harvest: {expected_sum}" in output or expected_sum in output:
+                     console.print(f"[green]OK ({'+'.join(inputs)}={expected_sum})[/green]")
+                else:
+                     console.print(f"[red]KO ({'+'.join(inputs)}={expected_sum})[/red]")
+                     self.record_error(exercise_label, f"Failed Test Case (Input: {inputs})", f"Expected 'Total harvest: {expected_sum}'\nGot:\n{output}")
+            except Exception as e:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, f"Runtime Error (Input: {inputs})", traceback.format_exc())
+
+    def test_plant_age(self):
+        console.print("\n[bold]Testing Exercise 4: ft_plant_age[/bold]")
+        exercise_label = "Exercise 4"
+        func = self._load_func("ft_plant_age", exercise_label)
+        if not func: return
+
+        cases = [
+            ("75", "Plant is ready to harvest!"),
+            ("100", "Plant is ready to harvest!"),
+            ("61", "Plant is ready to harvest!"),
+            ("60", "Plant needs more time to grow."),
+            ("45", "Plant needs more time to grow."),
+            ("12", "Plant needs more time to grow."),
+            ("0", "Plant needs more time to grow.")
+        ]
+
+        for inp, expected in cases:
+            try:
+                output = IOTester.run_function(func, inputs=[inp])
+                if expected.lower() in output.lower():
+                     console.print(f"[green]OK ({inp})[/green]")
+                else:
+                     console.print(f"[red]KO ({inp})[/red]")
+                     self.record_error(exercise_label, f"Failed Case (Input: {inp})", f"Input: {inp}\nExpected '{expected}'\nGot: {output}")
+            except Exception as e:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, f"Runtime Error (Input: {inp})", traceback.format_exc())
+
+    def test_water_reminder(self):
+        console.print("\n[bold]Testing Exercise 5: ft_water_reminder[/bold]")
+        exercise_label = "Exercise 5"
+        func = self._load_func("ft_water_reminder", exercise_label)
+        if not func: return
+        
+        cases = [
+            ("4", "Water the plants!"),
+            ("10", "Water the plants!"),
+            ("3", "Water the plants!"),
+            ("2", "Plants are fine"),
+            ("1", "Plants are fine"),
+            ("0", "Plants are fine")
+        ]
+
+        for inp, expected in cases:
+            try:
+                output = IOTester.run_function(func, inputs=[inp])
+                if expected.lower() in output.lower():
+                     console.print(f"[green]OK ({inp})[/green]")
+                else:
+                     console.print(f"[red]KO ({inp})[/red]")
+                     self.record_error(exercise_label, f"Failed Case (Input: {inp})", f"Input: {inp}\nExpected '{expected}'\nGot: {output}")
+            except Exception as e:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, f"Runtime Error (Input: {inp})", traceback.format_exc())
+
+    def test_count_harvest(self):
+        console.print("\n[bold]Testing Exercise 6: ft_count_harvest[/bold]")
+        exercise_label = "Exercise 6"
+        
+        func1 = self._load_func("ft_count_harvest_iterative", exercise_label)
+        if func1:
+            cases = ["3", "1", "0", "5"]
+            for inp in cases:
+                try:
+                    out = IOTester.run_function(func1, inputs=[inp])
+                    # Build expected strict output
+                    n = int(inp)
+                    expected_lines = [f"Day {d}" for d in range(1, n + 1)]
+                    expected_lines.append("Harvest time!")
+                    
+                    # Verify each line is present
+                    missing = []
+                    for line in expected_lines:
+                        if line not in out:
+                            missing.append(line)
+                    
+                    if not missing:
+                        console.print(f"[green]Iterative OK ({inp} days)[/green]")
+                    else:
+                        console.print(f"[red]Iterative KO ({inp} days)[/red]")
+                        self.record_error(exercise_label, f"Iterative Failed (Input: {inp})", f"Missing lines: {missing}\nGot:\n{out}")
+                except Exception as e:
+                     console.print(f"[red]Iterative KO[/red]")
+                     self.record_error(exercise_label, f"Iterative Error (Input: {inp})", traceback.format_exc())
+
+        func2 = self._load_func("ft_count_harvest_recursive", exercise_label)
+        if func2:
+            cases = ["3", "1", "0", "4"]
+            for inp in cases:
+                try:
+                    out = IOTester.run_function(func2, inputs=[inp])
+                    n = int(inp)
+                    expected_lines = [f"Day {d}" for d in range(1, n + 1)]
+                    expected_lines.append("Harvest time!")
+                    
+                    missing = []
+                    for line in expected_lines:
+                        if line not in out:
+                            missing.append(line)
+                            
+                    if not missing:
+                        console.print(f"[green]Recursive OK ({inp} days)[/green]")
+                    else:
+                        console.print(f"[red]Recursive KO ({inp} days)[/red]")
+                        self.record_error(exercise_label, f"Recursive Failed (Input: {inp})", f"Missing lines: {missing}\nGot:\n{out}")
+                except Exception as e:
+                     console.print(f"[red]Recursive KO[/red]")
+                     self.record_error(exercise_label, f"Recursive Error (Input: {inp})", traceback.format_exc())
+
+    # Credit to @eloiberlinger1 (GitHub PR #1) for adding exact match validation to detect unexpected content in ex07!
+    def test_seed_inventory(self):
+        console.print("\n[bold]Testing Exercise 7: ft_seed_inventory[/bold]")
+        exercise_label = "Exercise 7"
+        func = self._load_func("ft_seed_inventory", exercise_label)
+        if not func: return
+
+        # Check Signature (Strict Type Hints)
+        try:
+            sig = inspect.signature(func)
+            params = list(sig.parameters.items())
+            
+            # Expected: (seed_type: str, quantity: int, unit: str) -> None
+            if len(params) != 3:
+                console.print(f"[red]KO (Signature Mismatch)[/red]")
+                self.record_error(exercise_label, "Signature Error", f"Expected 3 parameters, got {len(params)}.")
+                return
+
+            p1_name, p1 = params[0]
+            p2_name, p2 = params[1]
+            p3_name, p3 = params[2]
+
+            if p1.annotation != str:
+                console.print(f"[red]KO (Type Hint Error)[/red]")
+                self.record_error(exercise_label, "Type Hint Error", f"Parameter '{p1_name}': Expected str, got {p1.annotation}")
+                return
+            if p2.annotation != int:
+                console.print(f"[red]KO (Type Hint Error)[/red]")
+                self.record_error(exercise_label, "Type Hint Error", f"Parameter '{p2_name}': Expected int, got {p2.annotation}")
+                return
+            if p3.annotation != str:
+                console.print(f"[red]KO (Type Hint Error)[/red]")
+                self.record_error(exercise_label, "Type Hint Error", f"Parameter '{p3_name}': Expected str, got {p3.annotation}")
+                return
+            
+            if sig.return_annotation is not None and sig.return_annotation != None: # 'None' type
+                # in python 3.10 match NoneType or strict None.
+                # Just check string repr or strict.
+                pass 
+
+        except Exception as e:
+             console.print(f"[red]KO (Signature Check Failed)[/red]")
+             self.record_error(exercise_label, "Signature Check Error", str(e))
+             return
+
+        cases = [
+            (("tomato", 15, "packets"), "Tomato seeds: 15 packets available"),
+            (("pepper", 100, "packets"), "Pepper seeds: 100 packets available"),
+            (("carrot", 8, "grams"), "Carrot seeds: 8 grams total"),
+            (("pumpkin", 1000, "grams"), "Pumpkin seeds: 1000 grams total"),
+            (("lettuce", 12, "area"), "Lettuce seeds: covers 12 square meters"),
+            (("grass", 50, "area"), "Grass seeds: covers 50 square meters"),
+            (("basil", 5, "unknown"), "Unknown unit type"),
+            (("mint", 1, "bushels"), "Unknown unit type")
+        ]
+
+        for args, expected in cases:
+            try:
+                out = IOTester.run_function(func, args=args)
+                out_clean = out.strip()
+                expected_clean = expected.strip()
+                is_valid_unit = args[2] in ["packets", "grams", "area"]
+                
+                if out_clean == expected_clean:
+                    console.print(f"[green]OK ({args[0]})[/green]")
+                else:
+                    # Check if expected is present but output has extra content
+                    has_expected = expected_clean in out_clean
+                    has_unwanted = "Unknown unit type" in out_clean if is_valid_unit else False
+                    
+                    console.print(f"[red]KO ({args[0]})[/red]")
+                    error_msg = f"Input: {args}\nExpected (exact): '{expected_clean}'\nGot:\n{out_clean}"
+                    
+                    if has_unwanted and is_valid_unit:
+                        error_msg += "\n\n[bold red]Error: 'Unknown unit type' was incorrectly printed for a valid unit![/bold red]"
+                    elif has_expected:
+                        error_msg += "\n\n[bold red]Error: Output contains unexpected additional content.[/bold red]"
+                    else:
+                        error_msg += "\n\n[bold red]Error: Expected string not found in output.[/bold red]"
+                    
+                    self.record_error(exercise_label, f"Failed Case ({args[2]})", error_msg)
+            except Exception as e:
+                console.print(f"[red]KO[/red]")
+                self.record_error(exercise_label, "Runtime Error", traceback.format_exc())
