@@ -5,6 +5,9 @@ import sys
 
 def main(argv) -> None:
     print("== Inventory System Analysis ==")
+    if len(sys.argv) < 2:
+        print("No items entered")
+        return
     inventory = {}
 
     for arg in argv[1:]:
@@ -31,7 +34,7 @@ def main(argv) -> None:
     total = sum(inventory.values())
     for item in inventory:  # noqa: PLC0206
         quantity = inventory[item]
-        percentage = round(quantity / total * 100, 1)
+        percentage = round(quantity / total * 100, 1) if total != 0 else 0.0
         print(f"Item {item} represents {percentage}%")
 
     if inventory:
