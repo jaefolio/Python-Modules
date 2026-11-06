@@ -119,7 +119,7 @@ class DataStream():
             return
 
         for processor in self._processors:
-            total, remaining = processor.get_stats()
+            remaining, total = processor.get_stats()
 
             name = type(processor).__name__
             name = name.replace("Processor", " Processor")
