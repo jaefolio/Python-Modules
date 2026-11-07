@@ -26,14 +26,16 @@ class NormalStrategy(BattleStrategy):
         print(entity.attack())
 
 
-class AggresiveStrategy(BattleStrategy):
+class AggressiveStrategy(BattleStrategy):
     def is_valid(self, entity: Creature) -> bool:
         return isinstance(entity, TransformCapability)
 
     def act(self, entity: Creature) -> None:
-        if not self.is_valid(entity):
+        if not isinstance(entity, TransformCapability):
             raise InvalidStrategyError("Invalid Creature"
                                        f"'{type(entity).__name__}'"
-                                       "for this aggresive strategy")
+                                       "for this Aggressive strategy")
 
+        print(entity.transform())
         print(entity.attack())
+        print(entity.revert())
