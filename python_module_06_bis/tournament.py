@@ -33,6 +33,17 @@ def main() -> None:
         (ex3.FlameFactory(), ex4.NormalStrategy()),
         (ex3.TransformCreatureFactory(), ex4.AggressiveStrategy())
     ]
+    result = []
+
+    for factory, strategy in opponents:
+        creature = factory.create_base()
+
+        creature_name = type(creature).__name__
+        strategy_name = type(strategy).__name__.removesuffix("Strategy")
+
+        result.append(f"({creature_name}+{strategy_name})")
+
+    print(f"[{', '.join(result)}]")
     battle(opponents)
 
     print("\nTournament 1 (error)")
@@ -40,6 +51,17 @@ def main() -> None:
         (ex3.TransformCreatureFactory(), ex4.AggressiveStrategy()),
         (ex3.FlameFactory(), ex4.AggressiveStrategy())
     ]
+    result = []
+
+    for factory, strategy in opponents:
+        creature = factory.create_base()
+
+        creature_name = type(creature).__name__
+        strategy_name = type(strategy).__name__.removesuffix("Strategy")
+
+        result.append(f"({creature_name}+{strategy_name})")
+
+    print(f"[{', '.join(result)}]")
     battle(opponents)
 
 
