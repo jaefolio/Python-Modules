@@ -33,7 +33,7 @@ class NumericProcessor(DataProcessor):
             return True
         return type(data) in (int, float)
 
-    def ingest(self, data: int | float | list[int] | list[float]) -> None:
+    def ingest(self, data: int | float | list[int | float]) -> None:
         if not self.validate(data):
             raise TypeError("Improper numeric data")
         values = data if isinstance(data, list) else [data]
@@ -100,7 +100,7 @@ def main() -> None:
     except TypeError as error:
         print(f"Got exception: {error}")
 
-    numbers = [1, 2, 3, 4, 5]
+    numbers: list[int | float] = [1, 2, 3, 4, 5]
     print(f"Processing data: {numbers}")
     numeric.ingest(numbers)
 
