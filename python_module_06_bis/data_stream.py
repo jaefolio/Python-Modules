@@ -26,7 +26,7 @@ class DataProcessor(ABC):
     def get_stats(self) -> tuple[int, int]:
         remaining = len(self._data)
         total = self._output_rank + remaining
-        return [remaining, total]
+        return (remaining, total)
 
 
 class NumericProcessor(DataProcessor):

@@ -33,7 +33,7 @@ class NumericProcessor(DataProcessor):
             return True
         return type(data) in (int, float)
 
-    def ingest(self, data: int | float | list[int | float]) -> None:
+    def ingest(self, data: int | float | list[int] | list[float]) -> None:
         if not self.validate(data):
             raise TypeError("Improper numeric data")
         values = data if isinstance(data, list) else [data]
