@@ -1,9 +1,9 @@
-from ex3 import FlameFactory, TransformCreatureFactory
+import ex3
 
 
 def main() -> None:
     print("Testing Factory")
-    flame = FlameFactory()
+    flame = ex3.FlameFactory()
     creature = flame.create_base()
     evolved = flame.create_evolved()
     print(creature.describe())
@@ -13,7 +13,7 @@ def main() -> None:
     print("")
 
     print("Testing Factory")
-    trans = TransformCreatureFactory()
+    trans = ex3.TransformCreatureFactory()
     t_creature = trans.create_base()
     t_evolved = trans.create_evolved()
     print(t_creature.describe())

@@ -1,8 +1,8 @@
-from ex3 import TransformCreatureFactory
+import ex3
 
 
 def main():
-    trans = TransformCreatureFactory()
+    trans = ex3.TransformCreatureFactory()
     t_creature = trans.create_base()
     t_evolved = trans.create_evolved()
     print("Transform creature with transform capability")
