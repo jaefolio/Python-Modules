@@ -31,11 +31,11 @@ class AggressiveStrategy(BattleStrategy):
         return isinstance(entity, TransformCapability)
 
     def act(self, entity: Creature) -> None:
-        if not isinstance(entity, TransformCapability):
+        if not self.is_valid:
             raise InvalidStrategyError("Invalid Creature"
                                        f"'{type(entity).__name__}'"
                                        "for this Aggressive strategy")
-
+        assert isinstance(entity, TransformCapability)
         print(entity.transform())
         print(entity.attack())
         print(entity.revert())
